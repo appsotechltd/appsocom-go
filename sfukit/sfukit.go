@@ -526,6 +526,142 @@ func (c *Client) LessonReport(ctx context.Context, lessonID string) (map[string]
 	return out, err
 }
 
+// StartPresenter starts an AI Presenter from an approved presentation kit. options: planId
+// (or lesson), lead ("ai" or "human"), name, voice, avatar, reportEmails, webhookUrl, maxMinutes.
+// The result has presentationId, lessonId and agentId. Stop it with StopLesson.
+func (c *Client) StartPresenter(ctx context.Context, roomID string, options map[string]any) (map[string]any, error) {
+	body, err := json.Marshal(options)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	err = c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/presenter", body, &out)
+	return out, err
+}
+
+// SetPresenterLead changes who leads: "ai" or "human".
+func (c *Client) SetPresenterLead(ctx context.Context, roomID, presentationID, lead string) error {
+	return c.ControlLesson(ctx, roomID, presentationID, map[string]any{"action": "lead", "lead": lead})
+}
+
+// PresenterBrowser controls the live demo's cloud browser: "take", "give" or "close".
+func (c *Client) PresenterBrowser(ctx context.Context, roomID, presentationID, action string) error {
+	return c.ControlLesson(ctx, roomID, presentationID, map[string]any{"action": "browser", "browser": action})
+}
+
+// PresenterBrowserOp sends one browser step, such as {"op": "click-at", "x": 0.4, "y": 0.2}
+// or {"op": "scroll", "direction": "down"}. Only whoever has taken the browser can send them.
+func (c *Client) PresenterBrowserOp(ctx context.Context, roomID, presentationID string, op map[string]any) error {
+	return c.ControlLesson(ctx, roomID, presentationID, map[string]any{"action": "browser", "browser": "op", "op": op})
+}
+
+// ListPresentationReports returns presentations that ended, newest first ({"presentations": [...]}).
+// planID is optional ("" for all kits).
+func (c *Client) ListPresentationReports(ctx context.Context, planID string) (map[string]any, error) {
+	path := "/presentation-reports"
+	if planID != "" {
+		path += "?planId=" + url.QueryEscape(planID)
+	}
+	var out map[string]any
+	err := c.do(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+// PresentationReport returns one presentation: summary, recommendations, questions and suggestions.
+func (c *Client) PresentationReport(ctx context.Context, reportID string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do(ctx, http.MethodGet, "/presentation-reports/"+reportID, nil, &out)
+	return out, err
+}
+
+// ReviewSuggestion marks a suggestion (its index in the report) "new", "reviewed", "accepted" or "dismissed".
+func (c *Client) ReviewSuggestion(ctx context.Context, reportID string, index int, status string) (map[string]any, error) {
+	body, _ := json.Marshal(map[string]string{"status": status})
+	var out map[string]any
+	err := c.do(ctx, http.MethodPut, "/presentation-reports/"+reportID+"/suggestions/"+strconv.Itoa(index), body, &out)
+	return out, err
+}
+
+// ---- self-running presentations: a link the AI Presenter presents on its own, privately to each visitor
+
+// PresentationVisitor is what a visitor typed before their presentation.
+type PresentationVisitor struct {
+	Name    string `json:"name,omitempty"`
+	Email   string `json:"email,omitempty"`
+	Company string `json:"company,omitempty"`
+	Phone   string `json:"phone,omitempty"`
+}
+
+// PresentationSession is a visitor's private room and join token.
+type PresentationSession struct {
+	SessionID string `json:"sessionId"`
+	RoomID    string `json:"roomId"`
+	Token     string `json:"token"`
+	ExpiresAt int64  `json:"expiresAt"`
+	Title     string `json:"title"`
+}
+
+// CreatePresentationLink makes a link from an approved kit. options must have planId; also title,
+// name, voice, avatar, reportEmails, askDetails, maxMinutes (30), perDay (50), maxConcurrent (5), active.
+func (c *Client) CreatePresentationLink(ctx context.Context, options map[string]any) (map[string]any, error) {
+	return c.jsonCall(ctx, http.MethodPost, "/presentation-links", options)
+}
+
+// ListPresentationLinks returns {"links": [...]}.
+func (c *Client) ListPresentationLinks(ctx context.Context) (map[string]any, error) {
+	return c.jsonCall(ctx, http.MethodGet, "/presentation-links", nil)
+}
+
+// PresentationLink returns one link.
+func (c *Client) PresentationLink(ctx context.Context, linkID string) (map[string]any, error) {
+	return c.jsonCall(ctx, http.MethodGet, "/presentation-links/"+url.PathEscape(linkID), nil)
+}
+
+// UpdatePresentationLink changes a link; fields left out stay ("active": false closes it).
+func (c *Client) UpdatePresentationLink(ctx context.Context, linkID string, patch map[string]any) (map[string]any, error) {
+	return c.jsonCall(ctx, http.MethodPatch, "/presentation-links/"+url.PathEscape(linkID), patch)
+}
+
+// DeletePresentationLink deletes a link.
+func (c *Client) DeletePresentationLink(ctx context.Context, linkID string) error {
+	return c.do(ctx, http.MethodDelete, "/presentation-links/"+url.PathEscape(linkID), nil, nil)
+}
+
+// StartPresentationSession is called when a visitor opens the link. The presenter starts when they
+// join RoomID with Token. Past the link's limits the API answers 429.
+func (c *Client) StartPresentationSession(ctx context.Context, linkID string, visitor PresentationVisitor) (*PresentationSession, error) {
+	body, _ := json.Marshal(map[string]any{"visitor": visitor})
+	var out PresentationSession
+	if err := c.do(ctx, http.MethodPost, "/presentation-links/"+url.PathEscape(linkID)+"/sessions", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPresentationSessions returns visitors and their leads, newest first ({"sessions": [...]}).
+// linkID is optional ("" for all links).
+func (c *Client) ListPresentationSessions(ctx context.Context, linkID string) (map[string]any, error) {
+	path := "/presentation-sessions"
+	if linkID != "" {
+		path += "?linkId=" + url.QueryEscape(linkID)
+	}
+	return c.jsonCall(ctx, http.MethodGet, path, nil)
+}
+
+// PresentationSessionInfo returns one visitor's session with its leads.
+func (c *Client) PresentationSessionInfo(ctx context.Context, sessionID string) (map[string]any, error) {
+	return c.jsonCall(ctx, http.MethodGet, "/presentation-sessions/"+url.PathEscape(sessionID), nil)
+}
+
+// JoinPresentationSession returns a host token for a colleague to step into a visitor's presentation.
+func (c *Client) JoinPresentationSession(ctx context.Context, sessionID, name, userID string) (map[string]any, error) {
+	in := map[string]any{"name": name}
+	if userID != "" {
+		in["userId"] = userID
+	}
+	return c.jsonCall(ctx, http.MethodPost, "/presentation-sessions/"+url.PathEscape(sessionID)+"/join", in)
+}
+
 // LearnerProgress returns a tutor learner's saved progress.
 func (c *Client) LearnerProgress(ctx context.Context, learnerID string) (map[string]any, error) {
 	var out map[string]any
