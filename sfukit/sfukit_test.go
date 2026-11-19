@@ -292,6 +292,37 @@ func TestAPIErrorStatus(t *testing.T) {
 	}
 }
 
+func TestParticipantPatchRejectsBadIDs(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.EscapedPath())
+		w.Write([]byte(`{"updated":1}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "key")
+	ctx := context.Background()
+	if n, err := c.SetRole(ctx, "room-A", "user:1@x", "student", nil); err != nil || n != 1 {
+		t.Fatalf("SetRole: %d %v", n, err)
+	}
+	for _, id := range []string{"../../B/participants/attacker", "..", ".", "", "a/b", "a?b", "a#b"} {
+		if _, err := c.SetRole(ctx, "room-A", id, "teacher", nil); !isBadRequest(err) {
+			t.Fatalf("SetRole with userID %q: want a 400 APIError, got %v", id, err)
+		}
+		if _, err := c.SetPermissions(ctx, "room-A", id, &PermissionsPatch{Moderate: Bool(true)}); !isBadRequest(err) {
+			t.Fatalf("SetPermissions with userID %q: want a 400 APIError, got %v", id, err)
+		}
+		if _, err := c.SetParticipantName(ctx, "room-A", id, "x"); !isBadRequest(err) {
+			t.Fatalf("SetParticipantName with userID %q: want a 400 APIError, got %v", id, err)
+		}
+		if _, err := c.SetRole(ctx, id, "u", "teacher", nil); !isBadRequest(err) {
+			t.Fatalf("SetRole with roomID %q: want a 400 APIError, got %v", id, err)
+		}
+	}
+	if len(calls) != 1 || calls[0] != "PATCH /rooms/room-A/participants/user:1@x" {
+		t.Fatalf("calls: %v", calls)
+	}
+}
+
 func TestPhonePins(t *testing.T) {
 	var calls []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -423,4 +454,167 @@ func TestSignTokenDataSaver(t *testing.T) {
 	if _, err := SignToken(secret, TokenRequest{RoomID: "r", UserID: "u", DataSaver: "ultra"}); err == nil {
 		t.Fatal("expected bad dataSaver error")
 	}
+}
+
+func TestAdminPathsRejectBadIDs(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.RequestURI())
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "key")
+	ctx := context.Background()
+	if err := c.Kick(ctx, "room-A", "user:1@x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Ban(ctx, "room-A", "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.LowerHand(ctx, "room-A", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.LowerHand(ctx, "room-A", "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.LessonReport(ctx, "agent-abc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ReviewSuggestion(ctx, "agent-abc", 2, "accepted"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteTenant(ctx, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	want := "DELETE /rooms/room-A/participants/user:1@x,DELETE /rooms/room-A/participants/u1?ban=true," +
+		"DELETE /rooms/room-A/hands,DELETE /rooms/room-A/hands/u1,GET /lessons/agent-abc/report," +
+		"PUT /presentation-reports/agent-abc/suggestions/2,DELETE /tenants/acme"
+	if got := strings.Join(calls, ","); got != want {
+		t.Fatalf("calls %s", got)
+	}
+
+	calls = nil
+	for _, id := range []string{"x/../../../../tenants/acme", "../tenants/acme/webhook?", "victim?ban=true", "..", ".", "", "a#b", "a%2Fb"} {
+		_, lessonErr := c.LessonReport(ctx, id)
+		_, getLessonErr := c.GetLesson(ctx, "A", id)
+		_, reportErr := c.PresentationReport(ctx, id)
+		_, egressErr := c.StopEgress(ctx, "A", id)
+		_, listErr := c.ListParticipants(ctx, id)
+		_, updateErr := c.UpdateTenant(ctx, id, "x", nil, nil)
+		_, rotateErr := c.RotateTenantKey(ctx, id)
+		errs := map[string]error{
+			"Kick userID":                    c.Kick(ctx, "A", id),
+			"Kick roomID":                    c.Kick(ctx, id, "u"),
+			"Ban userID":                     c.Ban(ctx, "A", id),
+			"Unban userID":                   c.Unban(ctx, "A", id),
+			"CloseRoom roomID":               c.CloseRoom(ctx, id),
+			"ListParticipants roomID":        listErr,
+			"GetLesson lessonID":             getLessonErr,
+			"StopLesson lessonID":            c.StopLesson(ctx, "A", id),
+			"SetPresenterLead id":            c.SetPresenterLead(ctx, "A", id, "ai"),
+			"LessonReport lessonID":          lessonErr,
+			"PresentationReport reportID":    reportErr,
+			"ClosePoll pollID":               c.ClosePoll(ctx, "A", id),
+			"DeleteIngress ingressID":        c.DeleteIngress(ctx, "A", id),
+			"StopEgress egressID":            egressErr,
+			"RemoveEgressDestination destID": c.RemoveEgressDestination(ctx, "A", "eg_1", id),
+			"UpdateTenant id":                updateErr,
+			"RotateTenantKey id":             rotateErr,
+			"DeleteTenant id":                c.DeleteTenant(ctx, id),
+		}
+		if id != "" { // "" lowers every hand
+			errs["LowerHand userID"] = c.LowerHand(ctx, "A", id)
+		}
+		for name, err := range errs {
+			if !isBadRequest(err) {
+				t.Errorf("%s with %q: want a 400 APIError, got %v", name, id, err)
+			}
+		}
+	}
+	if len(calls) != 0 {
+		t.Fatalf("requests sent for bad ids: %v", calls)
+	}
+	var apiErr *APIError
+	if _, err := c.ListParticipants(ctx, "bad room!"); !errors.As(err, &apiErr) || apiErr.Method != "GET" || apiErr.Path != "/rooms/bad%20room%21" {
+		t.Fatalf("bad id error: %#v", err)
+	}
+}
+
+func TestEscapedPathsRejectDotSegments(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.RequestURI())
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "key")
+	ctx := context.Background()
+	// Their own id formats still pass, escaped as before.
+	if _, err := c.StartTimetableRun(ctx, "tt1:slot-1:2026-11-18"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.GetLessonPlan(ctx, "a b/c"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteTenantKey(ctx, "acme_co-1", "key_1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteTenantKey(ctx, "", "key_1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.TenantWebhook(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	want := "POST /timetable-runs/tt1:slot-1:2026-11-18/start,GET /lesson-plans/a%20b%2Fc," +
+		"DELETE /tenants/acme_co-1/keys/key_1,DELETE /keys/key_1,GET /webhook"
+	if got := strings.Join(calls, ","); got != want {
+		t.Fatalf("calls %s", got)
+	}
+
+	calls = nil
+	for _, id := range []string{"..", ".", ""} {
+		_, planErr := c.GetLessonPlan(ctx, id)
+		_, versionsErr := c.LessonPlanVersions(ctx, id)
+		_, runErr := c.StartTimetableRun(ctx, id)
+		_, learnerErr := c.LearnerProgress(ctx, id)
+		errs := map[string]error{
+			"GetLessonPlan planID":     planErr,
+			"LessonPlanVersions":       versionsErr,
+			"ArchiveLessonPlan planID": c.ArchiveLessonPlan(ctx, id),
+			"DeleteCourse courseID":    c.DeleteCourse(ctx, id),
+			"DeleteTimetable id":       c.DeleteTimetable(ctx, id),
+			"StartTimetableRun key":    runErr,
+			"LearnerProgress id":       learnerErr,
+			"DeletePhonePin pin":       c.DeletePhonePin(ctx, id),
+			"DeleteTenantKey keyID":    c.DeleteTenantKey(ctx, "acme", id),
+		}
+		if id != "" { // "" = create, or the calling tenant's own
+			_, courseErr := c.SaveCourse(ctx, map[string]any{"id": id})
+			_, timetableErr := c.SaveTimetable(ctx, map[string]any{"id": id}, false)
+			_, keysErr := c.ListTenantKeys(ctx, id)
+			_, hookErr := c.TenantWebhook(ctx, id)
+			_, rotateErr := c.RotateTenantWebhookSecret(ctx, id)
+			errs["SaveCourse id"] = courseErr
+			errs["SaveTimetable id"] = timetableErr
+			errs["ListTenantKeys tenantID"] = keysErr
+			errs["TenantWebhook tenantID"] = hookErr
+			errs["RotateTenantWebhookSecret tenantID"] = rotateErr
+			errs["DeleteTenantKey tenantID"] = c.DeleteTenantKey(ctx, id, "key_1")
+			errs["SetTenantWebhook tenantID"] = c.SetTenantWebhook(ctx, id, "")
+		}
+		for name, err := range errs {
+			if !isBadRequest(err) {
+				t.Errorf("%s with %q: want a 400 APIError, got %v", name, id, err)
+			}
+		}
+	}
+	if len(calls) != 0 {
+		t.Fatalf("requests sent for dot segments: %v", calls)
+	}
+}
+
+// isBadRequest reports whether err is the 400 *APIError a bad id gets.
+func isBadRequest(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest
 }

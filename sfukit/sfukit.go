@@ -160,10 +160,14 @@ type Participant struct {
 
 // ListParticipants returns who is currently in a room.
 func (c *Client) ListParticipants(ctx context.Context, roomID string) ([]Participant, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Participants []Participant `json:"participants"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID, nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Participants, nil
@@ -171,59 +175,91 @@ func (c *Client) ListParticipants(ctx context.Context, roomID string) ([]Partici
 
 // Kick disconnects every connection of userID from roomID.
 func (c *Client) Kick(ctx context.Context, roomID, userID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/participants/"+userID, nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s/participants/%s", roomID, userID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // Ban disconnects userID and keeps them out of roomID until it empties (or Unban).
 func (c *Client) Ban(ctx context.Context, roomID, userID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/participants/"+userID+"?ban=true", nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s/participants/%s", roomID, userID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path+"?ban=true", nil, nil)
 }
 
 // Unban lets a banned user back into roomID.
 func (c *Client) Unban(ctx context.Context, roomID, userID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/bans/"+userID, nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s/bans/%s", roomID, userID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // PostChat posts a chat message from your backend; to = "" sends it to everyone,
 // otherwise privately to that userID.
 func (c *Client) PostChat(ctx context.Context, roomID, text, to string) error {
+	path, err := idPath(http.MethodPost, "/rooms/%s/chat", roomID)
+	if err != nil {
+		return err
+	}
 	payload := map[string]string{"text": text}
 	if to != "" {
 		payload["to"] = to
 	}
 	body, _ := json.Marshal(payload)
-	return c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/chat", body, nil)
+	return c.do(ctx, http.MethodPost, path, body, nil)
 }
 
 // SetChatEnabled turns chat on/off for everyone without the moderate permission.
 func (c *Client) SetChatEnabled(ctx context.Context, roomID string, enabled bool) error {
+	path, err := idPath(http.MethodPatch, "/rooms/%s", roomID)
+	if err != nil {
+		return err
+	}
 	body, _ := json.Marshal(map[string]bool{"chat": enabled})
-	return c.do(ctx, http.MethodPatch, "/rooms/"+roomID, body, nil)
+	return c.do(ctx, http.MethodPatch, path, body, nil)
 }
 
 // SetSpotlight puts up to 6 userIDs in the spotlight for everyone in roomID (empty clears).
 func (c *Client) SetSpotlight(ctx context.Context, roomID string, userIDs []string) error {
+	path, err := idPath(http.MethodPatch, "/rooms/%s", roomID)
+	if err != nil {
+		return err
+	}
 	if userIDs == nil {
 		userIDs = []string{}
 	}
 	body, _ := json.Marshal(map[string][]string{"spotlight": userIDs})
-	return c.do(ctx, http.MethodPatch, "/rooms/"+roomID, body, nil)
+	return c.do(ctx, http.MethodPatch, path, body, nil)
 }
 
 // SetWaitingRoom turns roomID's waiting room on/off (off admits everyone waiting).
 func (c *Client) SetWaitingRoom(ctx context.Context, roomID string, on bool) error {
+	path, err := idPath(http.MethodPatch, "/rooms/%s", roomID)
+	if err != nil {
+		return err
+	}
 	body, _ := json.Marshal(map[string]bool{"waitingRoom": on})
-	return c.do(ctx, http.MethodPatch, "/rooms/"+roomID, body, nil)
+	return c.do(ctx, http.MethodPatch, path, body, nil)
 }
 
 // Admit lets userID in from roomID's waiting room ("*" = everyone waiting).
 // Returns how many connections were admitted.
 func (c *Client) Admit(ctx context.Context, roomID, userID string) (int, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/admit", roomID)
+	if err != nil {
+		return 0, err
+	}
 	body, _ := json.Marshal(map[string]string{"userId": userID})
 	var out struct {
 		Admitted int `json:"admitted"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/admit", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return 0, err
 	}
 	return out.Admitted, nil
@@ -244,10 +280,14 @@ type AttendanceUser struct {
 // Attendance returns who attended roomID and for how long (kept 30 days after
 // the last activity). Times are ms since epoch.
 func (c *Client) Attendance(ctx context.Context, roomID string) ([]AttendanceUser, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/attendance", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Users []AttendanceUser `json:"users"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/attendance", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Users, nil
@@ -263,6 +303,10 @@ type BreakoutGroup struct {
 // StartBreakouts splits roomID into groups (replacing running breakouts).
 // Users not listed stay in the main room. Returns the groups with their ids.
 func (c *Client) StartBreakouts(ctx context.Context, roomID string, groups []BreakoutGroup) ([]BreakoutGroup, error) {
+	path, err := idPath(http.MethodPut, "/rooms/%s/breakouts", roomID)
+	if err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(map[string]any{"groups": groups})
 	if err != nil {
 		return nil, err
@@ -270,7 +314,7 @@ func (c *Client) StartBreakouts(ctx context.Context, roomID string, groups []Bre
 	var out struct {
 		Groups []BreakoutGroup `json:"groups"`
 	}
-	if err := c.do(ctx, http.MethodPut, "/rooms/"+roomID+"/breakouts", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPut, path, body, &out); err != nil {
 		return nil, err
 	}
 	return out.Groups, nil
@@ -278,7 +322,11 @@ func (c *Client) StartBreakouts(ctx context.Context, roomID string, groups []Bre
 
 // EndBreakouts brings everyone in roomID back to the main room.
 func (c *Client) EndBreakouts(ctx context.Context, roomID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/breakouts", nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s/breakouts", roomID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // ---------- AI lessons (an AI tutor, or an AI-taught class) ----------
@@ -300,6 +348,10 @@ type LessonStarted struct {
 
 // StartLesson starts an AI lesson in roomID.
 func (c *Client) StartLesson(ctx context.Context, roomID string, in LessonStart) (*LessonStarted, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/lessons", roomID)
+	if err != nil {
+		return nil, err
+	}
 	m := map[string]any{}
 	for k, v := range in.Options {
 		m[k] = v
@@ -313,7 +365,7 @@ func (c *Client) StartLesson(ctx context.Context, roomID string, in LessonStart)
 		return nil, err
 	}
 	var out LessonStarted
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/lessons", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -378,27 +430,47 @@ func (c *Client) CreateLessonPlan(ctx context.Context, input map[string]any) (ma
 
 // GetLessonPlan returns one plan.
 func (c *Client) GetLessonPlan(ctx context.Context, planID string) (map[string]any, error) {
-	return c.jsonCall(ctx, http.MethodGet, "/lesson-plans/"+url.PathEscape(planID), nil)
+	path, err := segPath(http.MethodGet, "/lesson-plans/%s", planID)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCall(ctx, http.MethodGet, path, nil)
 }
 
 // UpdateLessonPlan edits a plan; an approved plan keeps teaching its approved version until approved again.
 func (c *Client) UpdateLessonPlan(ctx context.Context, planID string, changes map[string]any) (map[string]any, error) {
-	return c.jsonCall(ctx, http.MethodPut, "/lesson-plans/"+url.PathEscape(planID), changes)
+	path, err := segPath(http.MethodPut, "/lesson-plans/%s", planID)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCall(ctx, http.MethodPut, path, changes)
 }
 
 // ReviseLessonPlan asks the AI to change a plan, e.g. "make section 2 simpler".
 func (c *Client) ReviseLessonPlan(ctx context.Context, planID, instruction string) (map[string]any, error) {
-	return c.jsonCall(ctx, http.MethodPost, "/lesson-plans/"+url.PathEscape(planID)+"/revise", map[string]any{"instruction": instruction})
+	path, err := segPath(http.MethodPost, "/lesson-plans/%s/revise", planID)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCall(ctx, http.MethodPost, path, map[string]any{"instruction": instruction})
 }
 
 // ApproveLessonPlan approves the plan as it is now (a new version). Start lessons with Options["planId"].
 func (c *Client) ApproveLessonPlan(ctx context.Context, planID string) (map[string]any, error) {
-	return c.jsonCall(ctx, http.MethodPost, "/lesson-plans/"+url.PathEscape(planID)+"/approve", nil)
+	path, err := segPath(http.MethodPost, "/lesson-plans/%s/approve", planID)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCall(ctx, http.MethodPost, path, nil)
 }
 
 // LessonPlanVersions lists a plan's approved versions.
 func (c *Client) LessonPlanVersions(ctx context.Context, planID string) ([]map[string]any, error) {
-	m, err := c.jsonCall(ctx, http.MethodGet, "/lesson-plans/"+url.PathEscape(planID)+"/versions", nil)
+	path, err := segPath(http.MethodGet, "/lesson-plans/%s/versions", planID)
+	if err != nil {
+		return nil, err
+	}
+	m, err := c.jsonCall(ctx, http.MethodGet, path, nil)
 	return listOf(m, "versions", err)
 }
 
@@ -408,12 +480,20 @@ func (c *Client) TrialLessonPlan(ctx context.Context, planID, roomID string) (ma
 	if roomID != "" {
 		in["roomId"] = roomID
 	}
-	return c.jsonCall(ctx, http.MethodPost, "/lesson-plans/"+url.PathEscape(planID)+"/trial", in)
+	path, err := segPath(http.MethodPost, "/lesson-plans/%s/trial", planID)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCall(ctx, http.MethodPost, path, in)
 }
 
 // ArchiveLessonPlan archives a plan.
 func (c *Client) ArchiveLessonPlan(ctx context.Context, planID string) error {
-	return c.do(ctx, http.MethodDelete, "/lesson-plans/"+url.PathEscape(planID), nil, nil)
+	path, err := segPath(http.MethodDelete, "/lesson-plans/%s", planID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // ListCourses lists courses.
@@ -431,14 +511,22 @@ func (c *Client) SaveCourse(ctx context.Context, course map[string]any) (map[str
 		}
 	}
 	if id, _ := course["id"].(string); id != "" {
-		return c.jsonCall(ctx, http.MethodPut, "/courses/"+url.PathEscape(id), body)
+		path, err := segPath(http.MethodPut, "/courses/%s", id)
+		if err != nil {
+			return nil, err
+		}
+		return c.jsonCall(ctx, http.MethodPut, path, body)
 	}
 	return c.jsonCall(ctx, http.MethodPost, "/courses", body)
 }
 
 // DeleteCourse deletes a course (refused while a timetable uses it).
 func (c *Client) DeleteCourse(ctx context.Context, courseID string) error {
-	return c.do(ctx, http.MethodDelete, "/courses/"+url.PathEscape(courseID), nil, nil)
+	path, err := segPath(http.MethodDelete, "/courses/%s", courseID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // ListTimetables lists timetables.
@@ -461,14 +549,22 @@ func (c *Client) SaveTimetable(ctx context.Context, timetable map[string]any, al
 		q = "?allowClashes=true"
 	}
 	if id, _ := timetable["id"].(string); id != "" {
-		return c.jsonCall(ctx, http.MethodPut, "/timetables/"+url.PathEscape(id)+q, body)
+		path, err := segPath(http.MethodPut, "/timetables/%s", id)
+		if err != nil {
+			return nil, err
+		}
+		return c.jsonCall(ctx, http.MethodPut, path+q, body)
 	}
 	return c.jsonCall(ctx, http.MethodPost, "/timetables"+q, body)
 }
 
 // DeleteTimetable deletes a timetable.
 func (c *Client) DeleteTimetable(ctx context.Context, timetableID string) error {
-	return c.do(ctx, http.MethodDelete, "/timetables/"+url.PathEscape(timetableID), nil, nil)
+	path, err := segPath(http.MethodDelete, "/timetables/%s", timetableID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // TimetableRuns lists scheduled lessons in the next days days; timetableID may be "".
@@ -490,39 +586,63 @@ func (c *Client) TimetableRuns(ctx context.Context, days int, timetableID string
 
 // StartTimetableRun starts a scheduled lesson now.
 func (c *Client) StartTimetableRun(ctx context.Context, key string) (map[string]any, error) {
-	return c.jsonCall(ctx, http.MethodPost, "/timetable-runs/"+url.PathEscape(key)+"/start", nil)
+	path, err := segPath(http.MethodPost, "/timetable-runs/%s/start", key)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCall(ctx, http.MethodPost, path, nil)
 }
 
 // SkipTimetableRun skips a scheduled lesson.
 func (c *Client) SkipTimetableRun(ctx context.Context, key string) (map[string]any, error) {
-	return c.jsonCall(ctx, http.MethodPost, "/timetable-runs/"+url.PathEscape(key)+"/skip", nil)
+	path, err := segPath(http.MethodPost, "/timetable-runs/%s/skip", key)
+	if err != nil {
+		return nil, err
+	}
+	return c.jsonCall(ctx, http.MethodPost, path, nil)
 }
 
 // GetLesson returns a running lesson's live state.
 func (c *Client) GetLesson(ctx context.Context, roomID, lessonID string) (map[string]any, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/lessons/%s", roomID, lessonID)
+	if err != nil {
+		return nil, err
+	}
 	var out map[string]any
-	err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/lessons/"+lessonID, nil, &out)
+	err = c.do(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 
 // ControlLesson steers a lesson: control["action"] is pause, resume, end, goto, call-on, floor-policy, scope or note.
 func (c *Client) ControlLesson(ctx context.Context, roomID, lessonID string, control map[string]any) error {
+	path, err := idPath(http.MethodPost, "/rooms/%s/lessons/%s/control", roomID, lessonID)
+	if err != nil {
+		return err
+	}
 	body, err := json.Marshal(control)
 	if err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/lessons/"+lessonID+"/control", body, nil)
+	return c.do(ctx, http.MethodPost, path, body, nil)
 }
 
 // StopLesson stops a lesson; its report is written.
 func (c *Client) StopLesson(ctx context.Context, roomID, lessonID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/lessons/"+lessonID, nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s/lessons/%s", roomID, lessonID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // LessonReport returns a finished lesson's report (summary, learners, alerts, transcript).
 func (c *Client) LessonReport(ctx context.Context, lessonID string) (map[string]any, error) {
+	path, err := idPath(http.MethodGet, "/lessons/%s/report", lessonID)
+	if err != nil {
+		return nil, err
+	}
 	var out map[string]any
-	err := c.do(ctx, http.MethodGet, "/lessons/"+lessonID+"/report", nil, &out)
+	err = c.do(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 
@@ -530,12 +650,16 @@ func (c *Client) LessonReport(ctx context.Context, lessonID string) (map[string]
 // (or lesson), lead ("ai" or "human"), name, voice, avatar, reportEmails, webhookUrl, maxMinutes.
 // The result has presentationId, lessonId and agentId. Stop it with StopLesson.
 func (c *Client) StartPresenter(ctx context.Context, roomID string, options map[string]any) (map[string]any, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/presenter", roomID)
+	if err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(options)
 	if err != nil {
 		return nil, err
 	}
 	var out map[string]any
-	err = c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/presenter", body, &out)
+	err = c.do(ctx, http.MethodPost, path, body, &out)
 	return out, err
 }
 
@@ -569,16 +693,24 @@ func (c *Client) ListPresentationReports(ctx context.Context, planID string) (ma
 
 // PresentationReport returns one presentation: summary, recommendations, questions and suggestions.
 func (c *Client) PresentationReport(ctx context.Context, reportID string) (map[string]any, error) {
+	path, err := idPath(http.MethodGet, "/presentation-reports/%s", reportID)
+	if err != nil {
+		return nil, err
+	}
 	var out map[string]any
-	err := c.do(ctx, http.MethodGet, "/presentation-reports/"+reportID, nil, &out)
+	err = c.do(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 
 // ReviewSuggestion marks a suggestion (its index in the report) "new", "reviewed", "accepted" or "dismissed".
 func (c *Client) ReviewSuggestion(ctx context.Context, reportID string, index int, status string) (map[string]any, error) {
+	path, err := idPath(http.MethodPut, "/presentation-reports/%s/suggestions/", reportID)
+	if err != nil {
+		return nil, err
+	}
 	body, _ := json.Marshal(map[string]string{"status": status})
 	var out map[string]any
-	err := c.do(ctx, http.MethodPut, "/presentation-reports/"+reportID+"/suggestions/"+strconv.Itoa(index), body, &out)
+	err = c.do(ctx, http.MethodPut, path+strconv.Itoa(index), body, &out)
 	return out, err
 }
 
@@ -664,40 +796,59 @@ func (c *Client) JoinPresentationSession(ctx context.Context, sessionID, name, u
 
 // LearnerProgress returns a tutor learner's saved progress.
 func (c *Client) LearnerProgress(ctx context.Context, learnerID string) (map[string]any, error) {
+	path, err := segPath(http.MethodGet, "/learners/%s/progress", learnerID)
+	if err != nil {
+		return nil, err
+	}
 	var out map[string]any
-	err := c.do(ctx, http.MethodGet, "/learners/"+url.PathEscape(learnerID)+"/progress", nil, &out)
+	err = c.do(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 
 // MoveToGroup moves userID to breakout group id groupID ("" = main room).
 func (c *Client) MoveToGroup(ctx context.Context, roomID, userID, groupID string) error {
+	path, err := idPath(http.MethodPost, "/rooms/%s/move", roomID)
+	if err != nil {
+		return err
+	}
 	var group any
 	if groupID != "" {
 		group = groupID
 	}
 	body, _ := json.Marshal(map[string]any{"userId": userID, "group": group})
-	return c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/move", body, nil)
+	return c.do(ctx, http.MethodPost, path, body, nil)
 }
 
 // LowerHand lowers userID's raised hand; userID "" lowers everyone's.
 func (c *Client) LowerHand(ctx context.Context, roomID, userID string) error {
-	path := "/rooms/" + roomID + "/hands"
+	path, err := idPath(http.MethodDelete, "/rooms/%s/hands", roomID)
 	if userID != "" {
-		path += "/" + userID
+		path, err = idPath(http.MethodDelete, "/rooms/%s/hands/%s", roomID, userID)
+	}
+	if err != nil {
+		return err
 	}
 	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // LockRoom stops anyone without the moderate permission from joining roomID (false unlocks).
 func (c *Client) LockRoom(ctx context.Context, roomID string, locked bool) error {
+	path, err := idPath(http.MethodPatch, "/rooms/%s", roomID)
+	if err != nil {
+		return err
+	}
 	body, _ := json.Marshal(map[string]bool{"locked": locked})
-	return c.do(ctx, http.MethodPatch, "/rooms/"+roomID, body, nil)
+	return c.do(ctx, http.MethodPatch, path, body, nil)
 }
 
 // Mute turns off devices ("mic", "camera", "screen") of userID, or of everyone
 // without the moderate permission when userID is "*". With lock, the permissions
 // are taken away too. Returns how many connections were muted.
 func (c *Client) Mute(ctx context.Context, roomID, userID string, devices []string, lock bool) (int, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/mute", roomID)
+	if err != nil {
+		return 0, err
+	}
 	body, err := json.Marshal(map[string]any{"userId": userID, "devices": devices, "lock": lock})
 	if err != nil {
 		return 0, err
@@ -705,7 +856,7 @@ func (c *Client) Mute(ctx context.Context, roomID, userID string, devices []stri
 	var out struct {
 		Muted int `json:"muted"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/mute", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return 0, err
 	}
 	return out.Muted, nil
@@ -715,6 +866,10 @@ func (c *Client) Mute(ctx context.Context, roomID, userID string, devices []stri
 // connections until the room empties. A nil patch resets to the token's permissions.
 // Returns how many live connections were updated.
 func (c *Client) SetPermissions(ctx context.Context, roomID, userID string, patch *PermissionsPatch) (int, error) {
+	path, err := idPath(http.MethodPatch, "/rooms/%s/participants/%s", roomID, userID)
+	if err != nil {
+		return 0, err
+	}
 	body, err := json.Marshal(map[string]any{"permissions": patch})
 	if err != nil {
 		return 0, err
@@ -722,7 +877,7 @@ func (c *Client) SetPermissions(ctx context.Context, roomID, userID string, patc
 	var out struct {
 		Updated int `json:"updated"`
 	}
-	if err := c.do(ctx, http.MethodPatch, "/rooms/"+roomID+"/participants/"+userID, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPatch, path, body, &out); err != nil {
 		return 0, err
 	}
 	return out.Updated, nil
@@ -732,6 +887,10 @@ func (c *Client) SetPermissions(ctx context.Context, roomID, userID string, patc
 // "student". For the built-in roles their permissions become that role's
 // defaults, with patch (may be nil) applied on top. Lasts until the room empties.
 func (c *Client) SetRole(ctx context.Context, roomID, userID, role string, patch *PermissionsPatch) (int, error) {
+	path, err := idPath(http.MethodPatch, "/rooms/%s/participants/%s", roomID, userID)
+	if err != nil {
+		return 0, err
+	}
 	req := map[string]any{"role": role}
 	if patch != nil {
 		req["permissions"] = patch
@@ -743,7 +902,7 @@ func (c *Client) SetRole(ctx context.Context, roomID, userID, role string, patch
 	var out struct {
 		Updated int `json:"updated"`
 	}
-	if err := c.do(ctx, http.MethodPatch, "/rooms/"+roomID+"/participants/"+userID, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPatch, path, body, &out); err != nil {
 		return 0, err
 	}
 	return out.Updated, nil
@@ -754,11 +913,15 @@ const maxMetadataBytes = 4096
 // SetRoomMetadata replaces the room's metadata (shared with everyone in it as
 // roomState.metadata). nil clears it.
 func (c *Client) SetRoomMetadata(ctx context.Context, roomID string, metadata map[string]any) error {
+	path, err := idPath(http.MethodPatch, "/rooms/%s", roomID)
+	if err != nil {
+		return err
+	}
 	body, err := json.Marshal(map[string]any{"metadata": metadata})
 	if err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPatch, "/rooms/"+roomID, body, nil)
+	return c.do(ctx, http.MethodPatch, path, body, nil)
 }
 
 // SetParticipantMetadata replaces a user's metadata (shared with everyone as
@@ -794,6 +957,10 @@ func (c *Client) SetParticipantName(ctx context.Context, roomID, userID, name st
 }
 
 func (c *Client) patchParticipant(ctx context.Context, roomID, userID string, req map[string]any) (int, error) {
+	path, err := idPath(http.MethodPatch, "/rooms/%s/participants/%s", roomID, userID)
+	if err != nil {
+		return 0, err
+	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return 0, err
@@ -801,7 +968,7 @@ func (c *Client) patchParticipant(ctx context.Context, roomID, userID string, re
 	var out struct {
 		Updated int `json:"updated"`
 	}
-	if err := c.do(ctx, http.MethodPatch, "/rooms/"+roomID+"/participants/"+userID, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPatch, path, body, &out); err != nil {
 		return 0, err
 	}
 	return out.Updated, nil
@@ -857,6 +1024,10 @@ type RecordingManifest struct {
 
 // StartRecording starts recording the room to R2. Everyone in the room is told.
 func (c *Client) StartRecording(ctx context.Context, roomID string, opts RecordingOptions) (*Recording, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/recording", roomID)
+	if err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(opts)
 	if err != nil {
 		return nil, err
@@ -864,7 +1035,7 @@ func (c *Client) StartRecording(ctx context.Context, roomID string, opts Recordi
 	var out struct {
 		Recording *Recording `json:"recording"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/recording", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, err
 	}
 	return out.Recording, nil
@@ -872,8 +1043,12 @@ func (c *Client) StartRecording(ctx context.Context, roomID string, opts Recordi
 
 // StopRecording stops the recording and returns its manifest.
 func (c *Client) StopRecording(ctx context.Context, roomID string) (*RecordingManifest, error) {
+	path, err := idPath(http.MethodDelete, "/rooms/%s/recording", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out RecordingManifest
-	if err := c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/recording", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodDelete, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -881,10 +1056,14 @@ func (c *Client) StopRecording(ctx context.Context, roomID string) (*RecordingMa
 
 // RecordingStatus returns the recording in progress, or nil.
 func (c *Client) RecordingStatus(ctx context.Context, roomID string) (*Recording, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/recording", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Recording *Recording `json:"recording"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/recording", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Recording, nil
@@ -892,7 +1071,11 @@ func (c *Client) RecordingStatus(ctx context.Context, roomID string) (*Recording
 
 // CloseRoom disconnects everyone from roomID.
 func (c *Client) CloseRoom(ctx context.Context, roomID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID, nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s", roomID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // IngressRequest creates an ingest point. All fields are optional.
@@ -941,9 +1124,13 @@ type Ingress struct {
 
 // CreateIngress makes an ingest point for a room (WHIP, or RTMP/SRT via Cloudflare Stream).
 func (c *Client) CreateIngress(ctx context.Context, roomID string, req IngressRequest) (*Ingress, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/ingress", roomID)
+	if err != nil {
+		return nil, err
+	}
 	body, _ := json.Marshal(req)
 	var out Ingress
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/ingress", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -951,10 +1138,14 @@ func (c *Client) CreateIngress(ctx context.Context, roomID string, req IngressRe
 
 // ListIngress returns a room's ingest points and whether each is live.
 func (c *Client) ListIngress(ctx context.Context, roomID string) ([]Ingress, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/ingress", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Ingress []Ingress `json:"ingress"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/ingress", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Ingress, nil
@@ -962,7 +1153,11 @@ func (c *Client) ListIngress(ctx context.Context, roomID string) ([]Ingress, err
 
 // DeleteIngress removes an ingest point and ends its stream if live.
 func (c *Client) DeleteIngress(ctx context.Context, roomID, ingressID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/ingress/"+ingressID, nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s/ingress/%s", roomID, ingressID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // EgressDestination is where a room's live stream goes. Set URL, or Platform
@@ -1006,9 +1201,13 @@ type Egress struct {
 
 // StartEgress streams a room out (Cloudflare Stream and/or RTMP destinations).
 func (c *Client) StartEgress(ctx context.Context, roomID string, req EgressRequest) (*Egress, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/egress", roomID)
+	if err != nil {
+		return nil, err
+	}
 	body, _ := json.Marshal(req)
 	var out Egress
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/egress", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1016,10 +1215,14 @@ func (c *Client) StartEgress(ctx context.Context, roomID string, req EgressReque
 
 // ListEgress returns a room's live streams out, with fresh status.
 func (c *Client) ListEgress(ctx context.Context, roomID string) ([]Egress, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/egress", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Egress []Egress `json:"egress"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/egress", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Egress, nil
@@ -1027,8 +1230,12 @@ func (c *Client) ListEgress(ctx context.Context, roomID string) ([]Egress, error
 
 // StopEgress stops a live stream out.
 func (c *Client) StopEgress(ctx context.Context, roomID, egressID string) (*Egress, error) {
+	path, err := idPath(http.MethodDelete, "/rooms/%s/egress/%s", roomID, egressID)
+	if err != nil {
+		return nil, err
+	}
 	var out Egress
-	if err := c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/egress/"+egressID, nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodDelete, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1036,9 +1243,13 @@ func (c *Client) StopEgress(ctx context.Context, roomID, egressID string) (*Egre
 
 // AddEgressDestination adds a simulcast destination while live (Cloudflare Stream only).
 func (c *Client) AddEgressDestination(ctx context.Context, roomID, egressID string, d EgressDestination) (*EgressDestination, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/egress/%s/destinations", roomID, egressID)
+	if err != nil {
+		return nil, err
+	}
 	body, _ := json.Marshal(d)
 	var out EgressDestination
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/egress/"+egressID+"/destinations", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1046,7 +1257,11 @@ func (c *Client) AddEgressDestination(ctx context.Context, roomID, egressID stri
 
 // RemoveEgressDestination removes a simulcast destination.
 func (c *Client) RemoveEgressDestination(ctx context.Context, roomID, egressID, destID string) error {
-	return c.do(ctx, http.MethodDelete, "/rooms/"+roomID+"/egress/"+egressID+"/destinations/"+destID, nil, nil)
+	path, err := idPath(http.MethodDelete, "/rooms/%s/egress/%s/destinations/%s", roomID, egressID, destID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // UsageQuery filters GET /usage. Zero values use the server defaults
@@ -1138,12 +1353,16 @@ type Question struct {
 
 // CreatePoll starts a poll in a room; everyone connected sees it at once.
 func (c *Client) CreatePoll(ctx context.Context, roomID string, in PollInput) (*Poll, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/polls", roomID)
+	if err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
 	var out Poll
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/polls", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1179,10 +1398,14 @@ func (c *Client) CreatePhonePin(ctx context.Context, req PhonePinRequest) (*Phon
 
 // ListPolls returns a room's polls with full results.
 func (c *Client) ListPolls(ctx context.Context, roomID string) ([]Poll, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/polls", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Polls []Poll `json:"polls"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/polls", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Polls, nil
@@ -1190,15 +1413,23 @@ func (c *Client) ListPolls(ctx context.Context, roomID string) ([]Poll, error) {
 
 // ClosePoll stops voting and shows results to everyone.
 func (c *Client) ClosePoll(ctx context.Context, roomID, pollID string) error {
-	return c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/polls/"+pollID+"/close", nil, nil)
+	path, err := idPath(http.MethodPost, "/rooms/%s/polls/%s/close", roomID, pollID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodPost, path, nil, nil)
 }
 
 // ListQuestions returns a room's Q&A questions (askers included, even anonymous ones).
 func (c *Client) ListQuestions(ctx context.Context, roomID string) ([]Question, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/questions", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Questions []Question `json:"questions"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/questions", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Questions, nil
@@ -1224,20 +1455,28 @@ type CallSummary struct {
 // SetCaptions turns live captions on or off for a room (needs Workers AI on the
 // Worker). Language is an optional ISO 639-1 hint; translate gives English captions.
 func (c *Client) SetCaptions(ctx context.Context, roomID string, on bool, language string, translate bool) error {
+	path, err := idPath(http.MethodPut, "/rooms/%s/captions", roomID)
+	if err != nil {
+		return err
+	}
 	body, err := json.Marshal(map[string]any{"on": on, "language": language, "translate": translate})
 	if err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPut, "/rooms/"+roomID+"/captions", body, nil)
+	return c.do(ctx, http.MethodPut, path, body, nil)
 }
 
 // Transcript returns a room's caption lines so far (kept until the room has been
 // empty for 2 minutes; then archived to R2 if the Worker has a STORAGE bucket).
 func (c *Client) Transcript(ctx context.Context, roomID string) ([]TranscriptLine, error) {
+	path, err := idPath(http.MethodGet, "/rooms/%s/transcript", roomID)
+	if err != nil {
+		return nil, err
+	}
 	var out struct {
 		Lines []TranscriptLine `json:"lines"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/rooms/"+roomID+"/transcript", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Lines, nil
@@ -1246,12 +1485,16 @@ func (c *Client) Transcript(ctx context.Context, roomID string) ([]TranscriptLin
 // Summarize asks Workers AI to summarize the transcript so far. Style is
 // "meeting" or "lesson". Everyone in the room gets the summary too.
 func (c *Client) Summarize(ctx context.Context, roomID, style string) (*CallSummary, error) {
+	path, err := idPath(http.MethodPost, "/rooms/%s/summary", roomID)
+	if err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(map[string]string{"style": style})
 	if err != nil {
 		return nil, err
 	}
 	var out CallSummary
-	if err := c.do(ctx, http.MethodPost, "/rooms/"+roomID+"/summary", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1301,12 +1544,13 @@ type WebhookTestResult struct {
 }
 
 // tenantPath is "/tenants/<id>"+rest with the master key, or rest alone for the
-// calling tenant's own key (tenantID "").
-func tenantPath(tenantID, rest string) string {
+// calling tenant's own key (tenantID ""). The ids fill rest's %s; segPath escapes
+// and checks them and tenantID.
+func tenantPath(method, tenantID, rest string, ids ...string) (string, error) {
 	if tenantID == "" {
-		return rest
+		return segPath(method, rest, ids...)
 	}
-	return "/tenants/" + url.PathEscape(tenantID) + rest
+	return segPath(method, "/tenants/%s"+rest, append([]string{tenantID}, ids...)...)
 }
 
 // TenantUsage is one calendar month (UTC) of usage.
@@ -1365,6 +1609,10 @@ func (c *Client) CreateTenant(ctx context.Context, id, name string, limits Tenan
 
 // UpdateTenant changes a tenant's name, limits (set fields only) or disabled flag.
 func (c *Client) UpdateTenant(ctx context.Context, id string, name string, limits *TenantLimits, disabled *bool) (*Tenant, error) {
+	path, err := idPath(http.MethodPatch, "/tenants/%s", id)
+	if err != nil {
+		return nil, err
+	}
 	patch := map[string]any{}
 	if name != "" {
 		patch["name"] = name
@@ -1382,7 +1630,7 @@ func (c *Client) UpdateTenant(ctx context.Context, id string, name string, limit
 	var out struct {
 		Tenant Tenant `json:"tenant"`
 	}
-	if err := c.do(ctx, http.MethodPatch, "/tenants/"+id, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPatch, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out.Tenant, nil
@@ -1391,10 +1639,14 @@ func (c *Client) UpdateTenant(ctx context.Context, id string, name string, limit
 // RotateTenantKey replaces the tenant's "default" API key; the old one stops working.
 // Keys made with CreateTenantKey are kept.
 func (c *Client) RotateTenantKey(ctx context.Context, id string) (string, error) {
+	path, err := idPath(http.MethodPost, "/tenants/%s/rotate-key", id)
+	if err != nil {
+		return "", err
+	}
 	var out struct {
 		APIKey string `json:"apiKey"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/tenants/"+id+"/rotate-key", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, nil, &out); err != nil {
 		return "", err
 	}
 	return out.APIKey, nil
@@ -1405,7 +1657,11 @@ func (c *Client) ListTenantKeys(ctx context.Context, tenantID string) ([]TenantK
 	var out struct {
 		Keys []TenantKey `json:"keys"`
 	}
-	if err := c.do(ctx, http.MethodGet, tenantPath(tenantID, "/keys"), nil, &out); err != nil {
+	path, err := tenantPath(http.MethodGet, tenantID, "/keys")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Keys, nil
@@ -1422,7 +1678,11 @@ func (c *Client) CreateTenantKey(ctx context.Context, tenantID, name string) (*T
 		Key    TenantKey `json:"key"`
 		APIKey string    `json:"apiKey"`
 	}
-	if err := c.do(ctx, http.MethodPost, tenantPath(tenantID, "/keys"), body, &out); err != nil {
+	path, err := tenantPath(http.MethodPost, tenantID, "/keys")
+	if err != nil {
+		return nil, "", err
+	}
+	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return nil, "", err
 	}
 	return &out.Key, out.APIKey, nil
@@ -1431,7 +1691,11 @@ func (c *Client) CreateTenantKey(ctx context.Context, tenantID, name string) (*T
 // DeleteTenantKey deletes one key; it stops working within 15 seconds. A tenant
 // can't delete its own last key (409).
 func (c *Client) DeleteTenantKey(ctx context.Context, tenantID, keyID string) error {
-	return c.do(ctx, http.MethodDelete, tenantPath(tenantID, "/keys/"+url.PathEscape(keyID)), nil, nil)
+	path, err := tenantPath(http.MethodDelete, tenantID, "/keys/%s", keyID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // SetTenantWebhook sets where the tenant's rooms send webhooks (https). webhookURL ""
@@ -1452,7 +1716,11 @@ func (c *Client) SetTenantWebhook(ctx context.Context, tenantID, webhookURL stri
 	if err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPatch, "/tenants/"+url.PathEscape(tenantID), body, nil)
+	path, err := segPath(http.MethodPatch, "/tenants/%s", tenantID)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodPatch, path, body, nil)
 }
 
 // TenantWebhook returns the tenant's webhook URL and the secret its deliveries
@@ -1462,7 +1730,11 @@ func (c *Client) TenantWebhook(ctx context.Context, tenantID string) (*TenantWeb
 		URL    *string `json:"url"`
 		Secret *string `json:"secret"`
 	}
-	if err := c.do(ctx, http.MethodGet, tenantPath(tenantID, "/webhook"), nil, &out); err != nil {
+	path, err := tenantPath(http.MethodGet, tenantID, "/webhook")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	info := &TenantWebhookInfo{}
@@ -1480,7 +1752,11 @@ func (c *Client) RotateTenantWebhookSecret(ctx context.Context, tenantID string)
 	var out struct {
 		Secret string `json:"secret"`
 	}
-	if err := c.do(ctx, http.MethodPost, tenantPath(tenantID, "/webhook/rotate-secret"), nil, &out); err != nil {
+	path, err := tenantPath(http.MethodPost, tenantID, "/webhook/rotate-secret")
+	if err != nil {
+		return "", err
+	}
+	if err := c.do(ctx, http.MethodPost, path, nil, &out); err != nil {
 		return "", err
 	}
 	return out.Secret, nil
@@ -1489,7 +1765,11 @@ func (c *Client) RotateTenantWebhookSecret(ctx context.Context, tenantID string)
 // TestTenantWebhook sends a "webhook_test" event to the tenant's webhook now.
 func (c *Client) TestTenantWebhook(ctx context.Context, tenantID string) (*WebhookTestResult, error) {
 	var out WebhookTestResult
-	if err := c.do(ctx, http.MethodPost, tenantPath(tenantID, "/webhook/test"), nil, &out); err != nil {
+	path, err := tenantPath(http.MethodPost, tenantID, "/webhook/test")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.do(ctx, http.MethodPost, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1497,7 +1777,11 @@ func (c *Client) TestTenantWebhook(ctx context.Context, tenantID string) (*Webho
 
 // DeleteTenant removes a tenant and its keys.
 func (c *Client) DeleteTenant(ctx context.Context, id string) error {
-	return c.do(ctx, http.MethodDelete, "/tenants/"+id, nil, nil)
+	path, err := idPath(http.MethodDelete, "/tenants/%s", id)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // MonthlyUsage returns the calling key's metered usage (the counters its limits
@@ -1529,7 +1813,40 @@ func (c *Client) PhonePins(ctx context.Context, roomID string) ([]PhonePin, erro
 
 // DeletePhonePin stops a code from working. Calls already in the room stay.
 func (c *Client) DeletePhonePin(ctx context.Context, pin string) error {
-	return c.do(ctx, http.MethodDelete, "/phone/pins/"+url.PathEscape(pin), nil, nil)
+	path, err := segPath(http.MethodDelete, "/phone/pins/%s", pin)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// idPath fills each %s in format with the matching id escaped as one path
+// segment, so an id can't point the admin request at another route. An id the
+// kit refuses (idPattern), or "." or ".." (which URL normalization resolves),
+// fails with a 400 *APIError for method before any request is sent.
+func idPath(method, format string, ids ...string) (string, error) {
+	return escapeIDs(method, format, true, ids)
+}
+
+// segPath is idPath for ids with formats of their own (lesson plans, timetable
+// runs, tenant keys, phone pins, ...): any id but "", "." and "..", which
+// url.PathEscape leaves as they are.
+func segPath(method, format string, ids ...string) (string, error) {
+	return escapeIDs(method, format, false, ids)
+}
+
+func escapeIDs(method, format string, strict bool, ids []string) (string, error) {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = url.PathEscape(id)
+	}
+	path := fmt.Sprintf(format, args...)
+	for _, id := range ids {
+		if id == "" || id == "." || id == ".." || strict && !idPattern.MatchString(id) {
+			return "", &APIError{Method: method, Path: path, Status: http.StatusBadRequest, Body: fmt.Sprintf("invalid id %q", id)}
+		}
+	}
+	return path, nil
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body []byte, out any) error {
