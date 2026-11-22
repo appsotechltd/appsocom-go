@@ -110,6 +110,14 @@ type AssistantTokenRequest struct {
 	// ReportUsage adds tier, billed units, cost and tokens to the chat's done
 	// event, for a backend that relays answers (not for browser tokens).
 	ReportUsage bool `json:"reportUsage,omitempty"`
+	// Instructions are this conversation's own role and rules, in place of
+	// the project's instructions (a tutor on one topic, say), at most 6,000
+	// characters.
+	Instructions string `json:"instructions,omitempty"`
+	// Knowledge answers from this collection of the project's knowledge base
+	// (GET /knowledge?collection=) instead of the project's own documents:
+	// for an app that keeps each of its customers' knowledge apart.
+	Knowledge string `json:"knowledge,omitempty"`
 	// TTLSeconds defaults to 3600, at most 43200.
 	TTLSeconds int `json:"ttlSeconds,omitempty"`
 }
